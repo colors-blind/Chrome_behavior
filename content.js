@@ -34,11 +34,17 @@
   // 2) 光标移动 + 停留时间
   let lastMouse = null;
   let lastMoveAt = Date.now();
+  let lastLoggedMoveAt = 0;
+  const MOVE_THROTTLE_MS = 500;
 
   document.addEventListener(
     "mousemove",
     (event) => {
       const now = Date.now();
+
+      if (now - lastLoggedMoveAt < MOVE_THROTTLE_MS) {
+        return;
+      }
 
       if (lastMouse) {
         // 两次移动间隔可视为在上一位置附近的停留时长
@@ -62,6 +68,7 @@
 
       lastMouse = currentMouse;
       lastMoveAt = now;
+      lastLoggedMoveAt = now;
     },
     { passive: true, capture: true }
   );
