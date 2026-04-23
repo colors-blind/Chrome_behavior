@@ -3,6 +3,17 @@
   "name": "Simple Behavior Logger",
   "version": "1.0.0",
   "description": "记录用户输入、鼠标停留时间与移动事件，并输出到控制台。",
+  "permissions": [
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://www.baidu.com/*",
+    "https://baidu.com/*",
+    "https://localhost:8443/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [

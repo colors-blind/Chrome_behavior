@@ -1,4 +1,5 @@
 const PREFIX = "[BehaviorLogger]";
+const BACKEND_URL = "https://localhost:8443";
 
 const STATIC_EXTENSIONS = [
   '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
@@ -7,11 +8,63 @@ const STATIC_EXTENSIONS = [
   '.pdf', '.doc', '.docx', '.xls', '.xlsx'
 ];
 
+const eventQueue = [];
+let isFlushing = false;
+const MAX_QUEUE_SIZE = 50;
+const FLUSH_INTERVAL = 1000;
+
 function isStaticResource(url) {
   const urlObj = new URL(url);
   const pathname = urlObj.pathname.toLowerCase();
   return STATIC_EXTENSIONS.some(ext => pathname.endsWith(ext));
 }
+
+async function sendToBackend(endpoint, data) {
+  try {
+    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+    
+    if (!response.ok) {
+      console.log(`${PREFIX} Failed to send to backend: ${response.status}`);
+    }
+  } catch (error) {
+    console.log(`${PREFIX} Backend connection error: ${error.message}`);
+  }
+}
+
+function enqueueEvent(event) {
+  eventQueue.push(event);
+  
+  if (eventQueue.length >= MAX_QUEUE_SIZE) {
+    flushQueue();
+  }
+}
+
+async function flushQueue() {
+  if (isFlushing || eventQueue.length === 0) {
+    return;
+  }
+  
+  isFlushing = true;
+  const eventsToSend = [...eventQueue];
+  eventQueue.length = 0;
+  
+  try {
+    await sendToBackend('/api/batch', eventsToSend);
+  } catch (error) {
+    console.log(`${PREFIX} Failed to flush queue: ${error.message}`);
+    eventQueue.unshift(...eventsToSend);
+  } finally {
+    isFlushing = false;
+  }
+}
+
+setInterval(flushQueue, FLUSH_INTERVAL);
 
 function logEvent(type, payload = {}) {
   const log = {
@@ -20,6 +73,8 @@ function logEvent(type, payload = {}) {
     ...payload
   };
   console.log(PREFIX, log);
+  
+  enqueueEvent(log);
 }
 
 chrome.webRequest.onBeforeRequest.addListener(
@@ -28,12 +83,31 @@ chrome.webRequest.onBeforeRequest.addListener(
       return;
     }
     
+    let requestBody = null;
+    if (details.requestBody) {
+      if (details.requestBody.formData) {
+        requestBody = details.requestBody.formData;
+      } else if (details.requestBody.raw) {
+        try {
+          const decoder = new TextDecoder('utf-8');
+          requestBody = decoder.decode(details.requestBody.raw[0].bytes);
+          try {
+            requestBody = JSON.parse(requestBody);
+          } catch {
+          }
+        } catch {
+          requestBody = '[Binary Data]';
+        }
+      }
+    }
+    
     logEvent("http_request", {
       method: details.method,
       url: details.url,
       requestId: details.requestId,
       type: details.type,
-      initiator: details.initiator || 'unknown'
+      initiator: details.initiator || 'unknown',
+      requestBody: requestBody
     });
   },
   {
@@ -145,3 +219,4 @@ chrome.webRequest.onErrorOccurred.addListener(
 );
 
 console.log(PREFIX, "Background service worker started");
+console.log(PREFIX, `Backend URL: ${BACKEND_URL}`);
