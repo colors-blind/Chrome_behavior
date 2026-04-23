@@ -81,6 +81,19 @@ STORAGE_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
 STORAGE_DIR = os.path.abspath(STORAGE_DIR)
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
+CERT_DIR = os.path.join(os.path.dirname(__file__), "certs")
+KEY_FILE = os.path.join(CERT_DIR, "server.key")
+CERT_FILE = os.path.join(CERT_DIR, "server.crt")
+
+def get_ssl_config():
+    """检查 SSL 证书并返回配置"""
+    if os.path.exists(KEY_FILE) and os.path.exists(CERT_FILE):
+        return {
+            "ssl_keyfile": KEY_FILE,
+            "ssl_certfile": CERT_FILE
+        }
+    return None
+
 def get_safe_domain(url: str) -> str:
     try:
         from urllib.parse import urlparse
@@ -199,11 +212,72 @@ async def log_batch(request: Request):
     return {"status": "received", "count": count}
 
 if __name__ == "__main__":
-    print("=" * 60)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Chrome Request Logger Backend Server")
+    parser.add_argument("--http", action="store_true", help="使用 HTTP 模式（不推荐，HTTPS 页面无法访问）")
+    parser.add_argument("--port", type=int, default=None, help="端口号（HTTPS默认8443，HTTP默认8000）")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="绑定地址")
+    parser.add_argument("--no-reload", action="store_true", help="禁用自动重载")
+    
+    args = parser.parse_args()
+    
+    ssl_config = get_ssl_config()
+    
+    print("=" * 70)
     print("Chrome Request Logger Backend Server")
-    print("=" * 60)
+    print("=" * 70)
     print(f"Storage Directory: {STORAGE_DIR}")
-    print(f"Server starting at: http://localhost:8000")
-    print(f"API Docs: http://localhost:8000/docs")
-    print("=" * 60)
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    
+    if args.http:
+        port = args.port or 8000
+        protocol = "http"
+        print(f"[警告] 使用 HTTP 模式，HTTPS 页面无法向此服务发送请求！")
+        print(f"Server starting at: http://localhost:{port}")
+        print(f"API Docs: http://localhost:{port}/docs")
+        uvicorn.run(
+            "main:app",
+            host=args.host,
+            port=port,
+            reload=not args.no_reload
+        )
+    elif ssl_config:
+        port = args.port or 8443
+        protocol = "https"
+        print(f"[成功] 找到 SSL 证书，启用 HTTPS 模式")
+        print(f"  私钥: {ssl_config['ssl_keyfile']}")
+        print(f"  证书: {ssl_config['ssl_certfile']}")
+        print(f"")
+        print(f"重要提示：")
+        print(f"1. 首次访问需要手动信任自签名证书")
+        print(f"   方法一：浏览器访问 https://localhost:{port} 并点击高级 -> 继续前往")
+        print(f"   方法二：使用 mkcert 生成系统信任的证书")
+        print(f"")
+        print(f"Server starting at: https://localhost:{port}")
+        print(f"API Docs: https://localhost:{port}/docs")
+        print("=" * 70)
+        uvicorn.run(
+            "main:app",
+            host=args.host,
+            port=port,
+            ssl_keyfile=ssl_config["ssl_keyfile"],
+            ssl_certfile=ssl_config["ssl_certfile"],
+            reload=not args.no_reload
+        )
+    else:
+        print(f"[错误] 未找到 SSL 证书！")
+        print(f"")
+        print(f"请先运行以下命令生成自签名证书：")
+        print(f"  python generate_cert.py")
+        print(f"")
+        print(f"或者使用 mkcert（推荐）：")
+        print(f"  1. 安装 mkcert: https://github.com/FiloSottile/mkcert")
+        print(f"  2. 运行: mkcert -install")
+        print(f"  3. 运行: mkcert localhost 127.0.0.1")
+        print(f"  4. 将生成的证书重命名为 server.crt 和 server.key 并放入 certs/ 目录")
+        print(f"")
+        print(f"如果仅用于本地测试且不介意 HTTP 模式，可使用：")
+        print(f"  python main.py --http")
+        print(f"（注意：HTTP 模式下，HTTPS 页面无法向此服务发送请求）")
+        print("=" * 70)
+        exit(1)
