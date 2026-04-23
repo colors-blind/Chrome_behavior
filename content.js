@@ -1,5 +1,6 @@
 (() => {
   const PREFIX = "[BehaviorLogger]";
+  const BACKEND_URL = "http://localhost:8000";
 
   const STATIC_EXTENSIONS = [
     '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
@@ -7,6 +8,11 @@
     '.mp3', '.mp4', '.webm', '.ogg',
     '.pdf', '.doc', '.docx', '.xls', '.xlsx'
   ];
+
+  const eventQueue = [];
+  let isFlushing = false;
+  const MAX_QUEUE_SIZE = 30;
+  const FLUSH_INTERVAL = 1500;
 
   function isBaiduUrl(url) {
     try {
@@ -39,6 +45,53 @@
     }
   }
 
+  async function sendToBackend(endpoint, data) {
+    try {
+      const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      });
+      
+      if (!response.ok) {
+        console.log(`${PREFIX} Failed to send to backend: ${response.status}`);
+      }
+    } catch (error) {
+      console.log(`${PREFIX} Backend connection error: ${error.message}`);
+    }
+  }
+
+  function enqueueEvent(event) {
+    eventQueue.push(event);
+    
+    if (eventQueue.length >= MAX_QUEUE_SIZE) {
+      flushQueue();
+    }
+  }
+
+  async function flushQueue() {
+    if (isFlushing || eventQueue.length === 0) {
+      return;
+    }
+    
+    isFlushing = true;
+    const eventsToSend = [...eventQueue];
+    eventQueue.length = 0;
+    
+    try {
+      await sendToBackend('/api/batch', eventsToSend);
+    } catch (error) {
+      console.log(`${PREFIX} Failed to flush queue: ${error.message}`);
+      eventQueue.unshift(...eventsToSend);
+    } finally {
+      isFlushing = false;
+    }
+  }
+
+  setInterval(flushQueue, FLUSH_INTERVAL);
+
   function logEvent(type, payload = {}) {
     const log = {
       type,
@@ -47,6 +100,8 @@
       ...payload
     };
     console.log(PREFIX, log);
+    
+    enqueueEvent(log);
   }
 
   // Hook XMLHttpRequest
@@ -275,7 +330,6 @@
       }
 
       if (lastMouse) {
-        // 两次移动间隔可视为在上一位置附近的停留时长
         const dwellMs = now - lastMoveAt;
         logEvent("cursor_dwell", {
           x: lastMouse.x,
@@ -333,4 +387,5 @@
   );
 
   logEvent("logger_ready", { message: "行为记录器已启动，XHR和Fetch钩子已激活" });
+  console.log(PREFIX, `Backend URL: ${BACKEND_URL}`);
 })();
