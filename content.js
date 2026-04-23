@@ -1,6 +1,6 @@
 (() => {
   const PREFIX = "[BehaviorLogger]";
-  const BACKEND_URL = "http://localhost:8000";
+  const BACKEND_URL = "https://localhost:8443";
 
   const STATIC_EXTENSIONS = [
     '.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',

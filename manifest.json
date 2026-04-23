@@ -9,7 +9,7 @@
   "host_permissions": [
     "https://www.baidu.com/*",
     "https://baidu.com/*",
-    "http://localhost:8000/*"
+    "https://localhost:8443/*"
   ],
   "background": {
     "service_worker": "background.js"
